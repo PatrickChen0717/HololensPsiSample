@@ -11,7 +11,7 @@
     <CommandLineArguments />
     <UseEmulator>false</UseEmulator>
     <RemoteDebugEnabled>true</RemoteDebugEnabled>
-    <RemoteDebugMachine>206.12.165.224</RemoteDebugMachine>
+    <RemoteDebugMachine>206.12.160.20</RemoteDebugMachine>
     <AuthenticationMode>Universal</AuthenticationMode>
   </PropertyGroup>
 </Project>

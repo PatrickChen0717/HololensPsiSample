@@ -6,6 +6,7 @@ namespace HoloLensSample
     using System;
     using System.Collections.Generic;
     using System.Diagnostics;
+    using System.Diagnostics.Contracts;
     using System.IO;
     using System.IO.Ports;
     using System.Linq;
@@ -37,6 +38,7 @@ namespace HoloLensSample
     using Microsoft.Psi.Spatial.Euclidean;
     using OpenCvSharp;
     using StereoKit;
+    using WebRTCtest;
     using Windows.Devices.Enumeration;
     using Windows.Devices.SerialCommunication;
     using Windows.Graphics.Imaging;
@@ -55,7 +57,7 @@ namespace HoloLensSample
     {
         // private static PeerConnection peerconnection;
         // private static DataChannel imageDataChannel;
-        private static SerialDevice serialdevice;
+        // private static SerialDevice serialdevice;
         private static RemoteExporter remoteExporter = null;
 
         /// <summary>
@@ -353,6 +355,11 @@ namespace HoloLensSample
         public static Pipeline BeesDemo(bool persistStreamsToStore)
         {
             var pipeline = Pipeline.Create(nameof(BeesDemo));
+            webrtcclient client = new webrtcclient();
+
+            return pipeline;
+            /*
+            var pipeline = Pipeline.Create(nameof(BeesDemo));
 
             try
             {
@@ -401,7 +408,7 @@ namespace HoloLensSample
             if (true)
             {
                 // Optionally persist sensor streams to visualize in PsiStudio, along with the bee streams.
-                /*var store = CreateStoreWithSourceStreams(pipeline, nameof(BeesDemo), headPose);*/
+                /*var store = CreateStoreWithSourceStreams(pipeline, nameof(BeesDemo), headPose);//
 
                 CreateStoreWithSourceStreams(pipeline, nameof(BeesDemo), headPose);
 
@@ -410,6 +417,7 @@ namespace HoloLensSample
             }
 
             return pipeline;
+            */
         }
 
         private static void CreateStoreWithSourceStreams(Pipeline pipeline, string storeName, HeadSensor head = null)
@@ -678,6 +686,80 @@ namespace HoloLensSample
         private static Mat ImageToMat(Image image)
         {
             return Mat.FromPixelData(image.Height, image.Width, MatType.CV_8UC3, image.ImageData);
+        }
+
+        private static async void StartRTC()
+        {
+            /*
+            hubConnection = new Microsoft.AspNetCore.SignalR.Client.HubConnectionBuilder()
+           .WithUrl("http://yourserver.com/myHub")
+           .Build();
+
+            hubConnection.On<string, string>("ReceiveMessage", (user, message) =>
+            {
+                Console.WriteLine($"Received message from {user}: {message}");
+            });
+
+            try
+            {
+                await hubConnection.StartAsync();
+                Console.WriteLine("Connection started");
+            }
+            catch (System.Exception ex)
+            {
+                Console.WriteLine($"Exception: {ex.Message}");
+            }
+            */
+
+            PeerConnection peerConnection;
+
+            var config = new PeerConnectionConfiguration
+            {
+                IceServers = new List<IceServer>
+                {
+                    new IceServer { Urls = { "stun:stun.relay.metered.ca:80" } },
+                    new IceServer
+                    {
+                        Urls = { "turn:standard.relay.metered.ca:80", "turn:standard.relay.metered.ca:443" },
+                        TurnUserName = "iSyXLtZG8rwh0osi",
+                        TurnPassword = "6120053268bd1226cca26cc3",
+                    },
+                },
+            };
+
+            peerConnection = new PeerConnection();
+            await peerConnection.InitializeAsync(config);
+
+            peerConnection.IceCandidateReadytoSend += OnIceCandidateReadyToSend;
+            peerConnection.LocalSdpReadytoSend += OnLocalSdpReadyToSend;
+            peerConnection.Connected += OnConnected;
+        }
+
+        private static void SendMessage(string user, string message)
+        {
+            try
+            {
+                //await hubConnection.InvokeAsync("SendMessage", user, message);
+            }
+            catch (System.Exception ex)
+            {
+                Console.WriteLine($"Exception on send: {ex.Message}");
+            }
+        }
+
+        private static void OnConnected()
+        {
+            Console.WriteLine("Peer connection successfully established!");
+        }
+
+        private static void OnIceCandidateReadyToSend(IceCandidate candidate)
+        {
+            Console.WriteLine($"IceCandidate ready to send: {candidate.Content}");
+        }
+
+        private static void OnLocalSdpReadyToSend(SdpMessage message)
+        {
+            Console.WriteLine($"Local SDP ready to send: Type {message.Type} SDP: {message.Content}");
         }
     }
 }
