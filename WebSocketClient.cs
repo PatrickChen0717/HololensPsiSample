@@ -79,7 +79,7 @@ public class WebSocketClient
             string messageJson = JsonConvert.SerializeObject(message);
             byte[] buffer = Encoding.UTF8.GetBytes(messageJson);
             await _webSocket.SendAsync(new ArraySegment<byte>(buffer), WebSocketMessageType.Text, true, CancellationToken.None);
-            //Console.WriteLine("Sent message: " + messageJson);
+            _ = WriteLogToFile("[Sent message]: " + messageJson);
             return true;
         }
         catch (Exception ex)
@@ -147,7 +147,7 @@ public class WebSocketClient
                 senderId = msgJson["Id"]?.ToString() ?? "Unknown sender";
                 int messageType = (int)msgJson["MessageType"];
                 string messageData = msgJson["Data"].ToString();
-
+                _ = WriteLogToFile("Received message Type: " + messageType);
                 switch (messageType)
                 {
                     case 1:

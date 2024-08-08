@@ -1,4 +1,5 @@
 using Microsoft.MixedReality.WebRTC;
+using Microsoft.Psi.Common;
 using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
@@ -20,13 +21,16 @@ namespace WebRTCtest
     /// </summary>
     public class webrtcclient
     {
-        PeerConnection peerConnection;
+        static PeerConnection peerConnection;
         static WebSocketClient webSocket;
         static IceConnectionState currentState;
         string localdescription;
 
         private DataChannel videoChannel;
         private DataChannel forceChannel;
+        private DataChannel depthChannel = null;
+
+        private static List<IceCandidate> pendingCandidates = new List<IceCandidate>();
 
         /// <summary>
         /// Initializes a new instance of the <see cref="WebSocketClient"/> class.
@@ -36,7 +40,7 @@ namespace WebRTCtest
             webSocket = new WebSocketClient("wss://mirthus.herokuapp.com", this);
             StartRTC();
 
-            Task.Run(async () => await StartFrceTest());
+            //Task.Run(async () => await StartFrceTest());
         }
 
         private async void StartRTC()
@@ -49,12 +53,14 @@ namespace WebRTCtest
             //Thread.Sleep(2000);
 
             var iceServers = new List<IceServer>();
+            
             iceServers.Add(new IceServer
             {
-                Urls = new List<string> { "stun:stun.relay.metered.ca:80" }
+                Urls = new List<string> { "stun:stun.relay.metered.ca:80" } // "stun:stun.l.google.com:19302"
             });
 
             // Add TURN servers
+            /*
             iceServers.Add(new IceServer
             {
                 Urls = new List<string> { "turn:standard.relay.metered.ca:80" },
@@ -81,11 +87,26 @@ namespace WebRTCtest
                 Urls = new List<string> { "turn:standard.relay.metered.ca:443?transport=tcp" },
                 TurnUserName = "6120053268bd1226cca26cc3",
                 TurnPassword = "iSyXLtZG8rwh0osi"
+            });*/
+
+            iceServers.Add(new IceServer
+            {
+                Urls = new List<string> {
+                    "turn:standard.relay.metered.ca:80",
+                    "turn:standard.relay.metered.ca:80?transport=tcp",
+                    "turn:standard.relay.metered.ca:443",
+                    "turn:standard.relay.metered.ca:443?transport=tcp"  // Using 'turns' for secure connection
+                },
+                TurnUserName = "6120053268bd1226cca26cc3",
+                TurnPassword = "iSyXLtZG8rwh0osi"
             });
 
             var config = new PeerConnectionConfiguration
             {
-                IceServers = iceServers
+                IceServers = iceServers,
+                IceTransportType = IceTransportType.All,
+                //BundlePolicy = BundlePolicy.MaxCompat,
+                SdpSemantic = SdpSemantic.UnifiedPlan
             };
 
             _ = WriteLogToFile("1");
@@ -97,7 +118,7 @@ namespace WebRTCtest
             try
             {
                 await peerConnection.InitializeAsync(config);
-                Console.WriteLine("Peer connection initialized");
+                _ = WriteLogToFile("Peer connection initialized");
 
                 peerConnection.IceStateChanged += OnIceStateChanged;
                 peerConnection.IceCandidateReadytoSend += OnIceCandidateReadyToSend;
@@ -106,10 +127,10 @@ namespace WebRTCtest
                 peerConnection.Connected += OnConnected;
 
 
-
                 await InitializeDataChannel();
                 bool res = peerConnection.CreateOffer();
                 _ = WriteLogToFile("Peer connection offer created: " + res);
+                
             }
             catch (Exception ex)
             {
@@ -121,8 +142,15 @@ namespace WebRTCtest
         private static void OnIceStateChanged(IceConnectionState newState)
         {
             _ = WriteLogToFile($"IceState Changed: {newState}");
+            if (newState == IceConnectionState.Connected || newState == IceConnectionState.Completed)
+            {
+                foreach (var candidate in pendingCandidates)
+                    peerConnection.AddIceCandidate(candidate);
+                pendingCandidates.Clear();
+            }
             currentState = newState;
         }
+
 
         private async Task InitializeDataChannel()
         {
@@ -134,6 +162,10 @@ namespace WebRTCtest
             forceChannel = await peerConnection.AddDataChannelAsync($"frce", true, true);
             forceChannel.MessageReceived += OnMessageReceived;
             forceChannel.StateChanged += () => _ = WriteLogToFile($"FrceChannel State Changed: {forceChannel.State}");
+
+            //depthChannel = await peerConnection.AddDataChannelAsync($"dpth", true, true);
+            //depthChannel.MessageReceived += OnMessageReceived;
+            //depthChannel.StateChanged += () => _ = WriteLogToFile($"dpthChannel State Changed: {depthChannel.State}");
         }
 
         private static void OnConnected()
@@ -144,8 +176,22 @@ namespace WebRTCtest
         private async static void OnIceCandidateReadyToSend(IceCandidate candidate)
         {
             _ = WriteLogToFile($"IceCandidate ready to send: {candidate.Content}");
+            if (candidate.Content.Contains("typ relay"))
+            {
+                _ = WriteLogToFile("Using TURN server for this candidate.");
+            }
+            else
+            {
+                _ = WriteLogToFile("Direct or STUN candidate.");
+            }
 
-            await webSocket.sendCandidateToSocket(candidate);
+            if (currentState == IceConnectionState.Connected)
+            {
+                pendingCandidates.Add(candidate);
+                await webSocket.sendCandidateToSocket(candidate);
+            }
+            else
+                await webSocket.sendCandidateToSocket(candidate);
         }
 
         private async void OnLocalSdpReadyToSend(SdpMessage message)
@@ -205,10 +251,14 @@ namespace WebRTCtest
                     {
                         string message = "frcetest";
                         byte[] buffer = Encoding.UTF8.GetBytes(message);
+
+                        string message2 = "dpthtest";
+                        byte[] buffer2 = Encoding.UTF8.GetBytes(message2);
                         try
                         {
 
                             forceChannel.SendMessage(buffer);
+                            depthChannel.SendMessage(buffer2);
                             _ = WriteLogToFile("Frce data sent");
                         }
                         catch (Exception ex)
@@ -249,7 +299,7 @@ namespace WebRTCtest
             _ = WriteLogToFile("create answer result: " + res);
             // Signal the SDP answer back to the remote peer via your signaling channel
             //SendSdpToSocket(answer.Content, SdpMessageType.Answer);
-            //await webSocket.SendMessageAsync((int)SdpMessageType.Answer, sdpContent, "mn_fol");
+            await webSocket.SendMessageAsync((int)SdpMessageType.Answer, sdpContent, "mn_fol");
         }
 
         /// <summary>
@@ -257,6 +307,13 @@ namespace WebRTCtest
         /// </summary>
         public async void HandleAnswerMessage(string sdpContent)
         {
+            _ = WriteLogToFile("HandleAnswerMessage ...");
+            /*if(currentState == IceConnectionState.Checking)
+            {
+                _ = WriteLogToFile("skip handling answer, due to state");
+                return;
+            }
+            */
             localdescription = sdpContent;
             /*
             if(sdpanswer == sdpContent)
@@ -274,6 +331,7 @@ namespace WebRTCtest
             try
             {
                 var answer = new SdpMessage { Type = SdpMessageType.Answer, Content = sdpContent };
+                _ = WriteLogToFile("SetRemoteDescriptionAsync ...");
                 await peerConnection.SetRemoteDescriptionAsync(answer);
                 //Console.WriteLine("create answer result: " + res);
                 _ = WriteLogToFile("PeerConnection successfully SetRemoteDescription");
@@ -295,7 +353,11 @@ namespace WebRTCtest
                 SdpMlineIndex = sdpMLineIndex,
                 Content = sdp
             };
-
+            /*
+            if (currentState == IceConnectionState.Connected)
+                pendingCandidates.Add(candidate);
+            else
+            */
             peerConnection.AddIceCandidate(candidate);
         }
 
@@ -304,6 +366,13 @@ namespace WebRTCtest
             StorageFolder localFolder = ApplicationData.Current.LocalFolder;
             StorageFile logFile = await localFolder.CreateFileAsync("applog.txt", CreationCollisionOption.OpenIfExists);
             await FileIO.AppendTextAsync(logFile, logMessage + "\n");
+        }
+
+#pragma warning disable CS1591
+        public void SendDepth(byte[] depthstream)
+        {
+           // if(depthChannel.State == DataChannel.ChannelState.Open)
+           //     depthChannel.SendMessage(depthstream);
         }
     }
 }
