@@ -11,6 +11,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Timers;
+using Windows.Devices.Sms;
 using Windows.Storage;
 using Windows.Storage.Streams;
 
@@ -49,14 +50,17 @@ namespace WebRTCtest
 
 
             //PeerConnection peerConnection;
-            
+
             //Thread.Sleep(2000);
 
             var iceServers = new List<IceServer>();
-            
+
             iceServers.Add(new IceServer
             {
-                Urls = new List<string> { "stun:stun.relay.metered.ca:80" } // "stun:stun.l.google.com:19302"
+                Urls = new List<string> { 
+                    "stun:stun.relay.metered.ca:80",
+                    "stun:stun1.l.google.com:19302"
+                } // "stun:stun.l.google.com:19302"
             });
 
             // Add TURN servers
@@ -88,7 +92,7 @@ namespace WebRTCtest
                 TurnUserName = "6120053268bd1226cca26cc3",
                 TurnPassword = "iSyXLtZG8rwh0osi"
             });*/
-
+            
             iceServers.Add(new IceServer
             {
                 Urls = new List<string> {
@@ -100,6 +104,7 @@ namespace WebRTCtest
                 TurnUserName = "6120053268bd1226cca26cc3",
                 TurnPassword = "iSyXLtZG8rwh0osi"
             });
+            
 
             var config = new PeerConnectionConfiguration
             {
@@ -130,7 +135,7 @@ namespace WebRTCtest
                 await InitializeDataChannel();
                 bool res = peerConnection.CreateOffer();
                 _ = WriteLogToFile("Peer connection offer created: " + res);
-                
+
             }
             catch (Exception ex)
             {
@@ -219,7 +224,7 @@ namespace WebRTCtest
         {
             _ = WriteLogToFile($"ICE Gathering State Changed: {iceGatheringState}");
 
-            if (iceGatheringState == IceGatheringState.Complete)
+            if (iceGatheringState != IceGatheringState.Complete)
                 await webSocket.SendMessageAsync(3, localdescription, "mn_fol");
         }
 
@@ -241,7 +246,7 @@ namespace WebRTCtest
 
                 while (true)
                 {
-                    if(currentState != IceConnectionState.Completed && currentState != IceConnectionState.Connected)
+                    if (currentState != IceConnectionState.Completed && currentState != IceConnectionState.Connected)
                     {
                         await Task.Delay(1000);
                         continue;
@@ -371,8 +376,8 @@ namespace WebRTCtest
 #pragma warning disable CS1591
         public void SendDepth(byte[] depthstream)
         {
-           // if(depthChannel.State == DataChannel.ChannelState.Open)
-           //     depthChannel.SendMessage(depthstream);
+            // if(depthChannel.State == DataChannel.ChannelState.Open)
+            //     depthChannel.SendMessage(depthstream);
         }
     }
 }

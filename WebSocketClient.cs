@@ -23,7 +23,7 @@ public class WebSocketClient
     private Uri _serverUri;
     private String ipAddress;
 
-    #pragma warning disable CS1591
+#pragma warning disable CS1591
     public event Action<string> OnMessage;
 
     public const String PEER_CONNECTED = "@@@";
@@ -54,9 +54,9 @@ public class WebSocketClient
             string message = "WAK4k5SthTsWrAxp49U4yfybjpjZ7XRu" + "mn_fol";
             byte[] buffer = Encoding.UTF8.GetBytes(message);
             await _webSocket.SendAsync(new ArraySegment<byte>(buffer), WebSocketMessageType.Text, true, CancellationToken.None);
-            #pragma warning disable CS4014
+#pragma warning disable CS4014
             Task.Run(() => StartReceiving());
-            #pragma warning restore CS4014
+#pragma warning restore CS4014
         }
 
     }
