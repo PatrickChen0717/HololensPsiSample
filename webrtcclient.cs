@@ -7,6 +7,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Net.WebSockets;
+using System.Reflection.Emit;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -14,6 +15,7 @@ using System.Timers;
 using Windows.Devices.Sms;
 using Windows.Storage;
 using Windows.Storage.Streams;
+using static Emgu.CV.ML.LogisticRegression;
 
 namespace WebRTCtest
 {
@@ -429,6 +431,82 @@ namespace WebRTCtest
         {
             if (depthChannel.State == DataChannel.ChannelState.Open)
                 depthChannel.SendMessage(depthstream);
+        }
+
+        public void SendVido(byte[] vidostream)
+        {
+            if (videoChannel.State == DataChannel.ChannelState.Open) 
+            {
+                SliceData(vidostream);
+            }
+        }
+
+        public void SliceData(byte[] videobyte)
+        {
+            byte[] metadata_bytes = new byte[16];
+            int numChunk = 10;
+
+            int totalLength = videobyte.Length;
+            int chunkSize = totalLength / numChunk;
+            int startIndex = 0;
+
+            System.Random rnd = new System.Random();
+            ushort label = 1001;
+            ushort dataID = (ushort)rnd.Next(ushort.MinValue, ushort.MaxValue + 1);
+
+            for (int i = 0; i < numChunk; i++)
+            {
+                int endIndex = startIndex + chunkSize;
+                if (i == numChunk - 1)
+                {
+                    endIndex = totalLength;
+                }
+
+                int chunkLength = endIndex - startIndex;
+                byte[] chunk = new byte[chunkLength];
+
+                // Copy bytes from the original array to the chunk
+                for (int j = 0; j < chunkLength; j++)
+                {
+                    chunk[j] = videobyte[startIndex + j];
+                }
+  
+                AssembleSendPacket(metadata_bytes, chunk, label, dataID, startIndex, totalLength);
+
+                startIndex = endIndex;
+            }
+        }
+
+        private void AssembleSendPacket(byte[] metadata_bytes, byte[] chunk, ushort label, ushort dataID, int startIndex, int totalLength)
+        {
+            metadata_bytes[0] = (byte)(label & 0xFF);
+            metadata_bytes[1] = (byte)(label >> 8);
+
+            metadata_bytes[2] = (byte)(dataID & 0xFF);
+            metadata_bytes[3] = (byte)(dataID >> 8);
+            byte[] newOffsetBytes = BitConverter.GetBytes(startIndex);
+            byte[] newDatalengthBytes = BitConverter.GetBytes(totalLength);
+
+
+            // Overwrite datalength value with converted frame datalength
+            for (int i = 0; i < newDatalengthBytes.Length; i++)
+            {
+                metadata_bytes[4 + i] = newDatalengthBytes[i];
+            }
+
+            // Overwrite offset value to the startIndex of current chunk
+            for (int i = 0; i < newOffsetBytes.Length; i++)
+            {
+                metadata_bytes[8 + i] = newOffsetBytes[i];
+            }
+
+
+            byte[] senddata = new byte[metadata_bytes.Length + chunk.Length];
+            System.Buffer.BlockCopy(metadata_bytes, 0, senddata, 0, metadata_bytes.Length);
+
+            System.Buffer.BlockCopy(chunk, 0, senddata, metadata_bytes.Length, chunk.Length);
+
+            videoChannel.SendMessage(senddata);
         }
     }
 }

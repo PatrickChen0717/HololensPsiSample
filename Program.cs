@@ -391,10 +391,6 @@ namespace HoloLensSample
           
             var depthCamera = new DepthCamera(pipeline, depthCameraConfiguration);
 
-            Microsoft.Psi.Imaging.DepthImageFromStreamDecoder depthstreamDecoder = new DepthImageFromStreamDecoder();
-            Microsoft.Psi.Imaging.DepthImageToPngStreamEncoder depthstreamEncoder = new DepthImageToPngStreamEncoder();
-            Microsoft.Psi.Imaging.DepthImageDecoder depthImageDecoder = new DepthImageDecoder(pipeline, depthstreamDecoder);
-            Microsoft.Psi.Imaging.DepthImageEncoder depthImageEncoder = new DepthImageEncoder(pipeline, depthstreamEncoder);
             //Microsoft.Psi.Imaging.ImageEncoder imagencoder = new ImageEncoder(pipeline, depthstreamDecoder);
 
             //depthCamera.DepthImage.PipeTo();
@@ -404,16 +400,68 @@ namespace HoloLensSample
             {
                 _ = WriteLogToFile("1: depthImageDecodere == " + DepthImage.Resource.Height);
             });*/
-/*
-            depthImageDecoder.Out.Do(depthimage =>
-            {
-                byte[] pixelData = new byte[depthimage.Resource.Size];
-                _ = WriteLogToFile("1: depthimage.Resource.Size == " + depthimage.Resource.Size);
-                System.Runtime.InteropServices.Marshal.Copy(depthimage.Resource.ImageData, pixelData, 0, pixelData.Length);
-                client.SendDepth(pixelData);
-            });
-            */
+            /*
+                        depthImageDecoder.Out.Do(depthimage =>
+                        {
+                            byte[] pixelData = new byte[depthimage.Resource.Size];
+                            _ = WriteLogToFile("1: depthimage.Resource.Size == " + depthimage.Resource.Size);
+                            System.Runtime.InteropServices.Marshal.Copy(depthimage.Resource.ImageData, pixelData, 0, pixelData.Length);
+                            client.SendDepth(pixelData);
+                        });
+                        */
             //_ = WriteLogToFile("depthCamera created");
+
+            var camera = new PhotoVideoCamera(
+                pipeline,
+                new PhotoVideoCameraConfiguration
+                {
+                    VideoStreamSettings = new() { FrameRate = 15, ImageWidth = 896, ImageHeight = 504 },
+            });
+
+            camera.VideoEncodedImage.PipeTo(decoder.In);
+
+            decoder.Out.Do(async image =>
+            {
+                try
+                {
+                    byte[] pixelData = new byte[image.Resource.Size];
+                    System.Runtime.InteropServices.Marshal.Copy(image.Resource.ImageData, pixelData, 0, pixelData.Length);
+                   
+                    using (var stream = new InMemoryRandomAccessStream())
+                    {
+                        BitmapEncoder encoder = await BitmapEncoder.CreateAsync(BitmapEncoder.JpegEncoderId, stream);
+
+                        encoder.SetPixelData(
+                            BitmapPixelFormat.Bgra8,
+                            BitmapAlphaMode.Premultiplied,
+                            (uint)image.Resource.Width,
+                            (uint)image.Resource.Height,
+                            96,  // DPI X
+                            96,  // DPI Y
+                            pixelData);
+
+                        await encoder.FlushAsync();
+
+                        stream.Seek(0);
+
+                        // Read the JPEG data back from the stream
+                        byte[] jpegData = new byte[stream.Size];
+                        using (var reader = new DataReader(stream))
+                        {
+                            await reader.LoadAsync((uint)stream.Size);
+                            reader.ReadBytes(jpegData);
+                        }
+                        _ = WriteLogToFile("jpegData image: " + jpegData.Length);
+                        client.SendVido(jpegData);
+                    }
+
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Error processing image: {ex.Message}");
+                }
+            });
+
 
             depthCamera.DepthImageCameraView.Do(DepthCameraView =>
             {
@@ -731,7 +779,6 @@ namespace HoloLensSample
         {
             try
             {
-                //_ = WriteLogToFile("image.Resource.Size : " + image.Resource.Size.ToString());
                 if (image.Resource.Size <= 0)
                 {
                     return;
@@ -742,15 +789,11 @@ namespace HoloLensSample
                // _ = WriteLogToFile("image empty file created ");
                 using (var stream = await file.OpenAsync(FileAccessMode.ReadWrite))
                 {
-                    // Create a BitmapEncoder
                     BitmapEncoder encoder = await BitmapEncoder.CreateAsync(BitmapEncoder.JpegEncoderId, stream);
-                //    _ = WriteLogToFile("BitmapEncoder created ");
 
-                    // Assuming image format is Bgra8 and the image class provides direct access to ImageData
-                    byte[] pixelData = new byte[image.Resource.Size]; // 4 bytes per pixel for BGRA
-                //    _ = WriteLogToFile("pixelData created ");
+                    byte[] pixelData = new byte[image.Resource.Size];
                     System.Runtime.InteropServices.Marshal.Copy(image.Resource.ImageData, pixelData, 0, pixelData.Length);
-                //    _ = WriteLogToFile("pixelData copied ");
+  
 
                     encoder.SetPixelData(
                         BitmapPixelFormat.Bgra8,
