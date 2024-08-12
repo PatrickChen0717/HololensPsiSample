@@ -22,16 +22,19 @@ namespace WebRTCtest
     /// </summary>
     public class webrtcclient
     {
-        static PeerConnection peerConnection;
+
+#pragma warning disable CS1591, CS0414
+        PeerConnection peerConnection;
         static WebSocketClient webSocket;
         static IceConnectionState currentState;
         string localdescription;
 
         private DataChannel videoChannel;
         private DataChannel forceChannel;
-        private DataChannel depthChannel = null;
+        private DataChannel depthChannel;
 
-        private static List<IceCandidate> pendingCandidates = new List<IceCandidate>();
+        private Boolean GatherComplete = false;
+        private int restartCnt = 0;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="WebSocketClient"/> class.
@@ -48,159 +51,135 @@ namespace WebRTCtest
         {
             await webSocket.ConnectAsync();
 
-
-            //PeerConnection peerConnection;
-
-            //Thread.Sleep(2000);
-
             var iceServers = new List<IceServer>();
 
             iceServers.Add(new IceServer
             {
-                Urls = new List<string> { 
-                    "stun:stun.relay.metered.ca:80",
-                    "stun:stun1.l.google.com:19302"
-                } // "stun:stun.l.google.com:19302"
+                Urls = new List<string> { "stun:stun.relay.metered.ca:80" }
             });
 
-            // Add TURN servers
-            /*
-            iceServers.Add(new IceServer
-            {
-                Urls = new List<string> { "turn:standard.relay.metered.ca:80" },
-                TurnUserName = "6120053268bd1226cca26cc3",
-                TurnPassword = "iSyXLtZG8rwh0osi"
-            });
-
-            iceServers.Add(new IceServer
-            {
-                Urls = new List<string> { "turn:standard.relay.metered.ca:80?transport=tcp" },
-                TurnUserName = "6120053268bd1226cca26cc3",
-                TurnPassword = "iSyXLtZG8rwh0osi"
-            });
-
-            iceServers.Add(new IceServer
-            {
-                Urls = new List<string> { "turn:standard.relay.metered.ca:443" },
-                TurnUserName = "6120053268bd1226cca26cc3",
-                TurnPassword = "iSyXLtZG8rwh0osi"
-            });
-
-            iceServers.Add(new IceServer
-            {
-                Urls = new List<string> { "turn:standard.relay.metered.ca:443?transport=tcp" },
-                TurnUserName = "6120053268bd1226cca26cc3",
-                TurnPassword = "iSyXLtZG8rwh0osi"
-            });*/
-            
             iceServers.Add(new IceServer
             {
                 Urls = new List<string> {
-                    "turn:standard.relay.metered.ca:80",
-                    "turn:standard.relay.metered.ca:80?transport=tcp",
-                    "turn:standard.relay.metered.ca:443",
-                    "turn:standard.relay.metered.ca:443?transport=tcp"  // Using 'turns' for secure connection
-                },
+                "turn:standard.relay.metered.ca:80",
+                "turn:standard.relay.metered.ca:80?transport=tcp",
+                "turn:standard.relay.metered.ca:443",
+                "turn:standard.relay.metered.ca:443?transport=tcp"
+            },
                 TurnUserName = "6120053268bd1226cca26cc3",
                 TurnPassword = "iSyXLtZG8rwh0osi"
             });
-            
 
             var config = new PeerConnectionConfiguration
             {
                 IceServers = iceServers,
                 IceTransportType = IceTransportType.All,
-                //BundlePolicy = BundlePolicy.MaxCompat,
+                BundlePolicy = BundlePolicy.MaxCompat,
                 SdpSemantic = SdpSemantic.UnifiedPlan
             };
 
-            _ = WriteLogToFile("1");
-            //Thread.Sleep(2000);
             peerConnection = new PeerConnection();
-            _ = WriteLogToFile("1");
-            //Thread.Sleep(2000);
 
             try
             {
                 await peerConnection.InitializeAsync(config);
-                _ = WriteLogToFile("Peer connection initialized");
+                Console.WriteLine("Peer connection initialized");
 
+                peerConnection.IceGatheringStateChanged += OnIceGatheringStateChanged;
                 peerConnection.IceStateChanged += OnIceStateChanged;
                 peerConnection.IceCandidateReadytoSend += OnIceCandidateReadyToSend;
-                peerConnection.IceGatheringStateChanged += onIceGatheringChange;
                 peerConnection.LocalSdpReadytoSend += OnLocalSdpReadyToSend;
                 peerConnection.Connected += OnConnected;
-
+                peerConnection.RenegotiationNeeded += OnRenegotiationNeeded;
 
                 await InitializeDataChannel();
-                bool res = peerConnection.CreateOffer();
-                _ = WriteLogToFile("Peer connection offer created: " + res);
-
+                Console.WriteLine("Gather completed");
+                StartOfferLoop();
+                // bool res = peerConnection.CreateOffer();
+                //  Console.WriteLine("Peer connection offer created: " + res);
             }
             catch (Exception ex)
             {
-                _ = WriteLogToFile("Failed to initialize peer connection: " + ex.Message);
+                Console.WriteLine("Failed to initialize peer connection: " + ex.Message);
             }
 
         }
 
-        private static void OnIceStateChanged(IceConnectionState newState)
+        public void StartOfferLoop()
         {
-            _ = WriteLogToFile($"IceState Changed: {newState}");
-            if (newState == IceConnectionState.Connected || newState == IceConnectionState.Completed)
+            Task.Run(async () =>
             {
-                foreach (var candidate in pendingCandidates)
-                    peerConnection.AddIceCandidate(candidate);
-                pendingCandidates.Clear();
+                while (true)
+                {
+                    try
+                    {
+                        if (peerConnection != null && currentState != IceConnectionState.Connected && currentState != IceConnectionState.Completed)
+                        {
+                            Console.WriteLine("Attempting to create an offer...");
+                            bool offerResult = peerConnection.CreateOffer();
+                            Console.WriteLine($"Offer creation result: {offerResult}");
+                        }
+                        else
+                        {
+                            Console.WriteLine("Peer connection is either null or already connected.");
+                        }
+                        await Task.Delay(5000);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Exception in StartOfferLoop: {ex.Message}");
+                        await Task.Delay(5000);
+                    }
+                }
+            });
+        }
+
+        private void OnRenegotiationNeeded()
+        {
+            Console.WriteLine("OnRenegotiationNeeded.");
+            bool res = peerConnection.CreateOffer();
+        }
+
+
+        private void OnIceGatheringStateChanged(IceGatheringState newState)
+        {
+            if (newState == IceGatheringState.Complete)
+            {
+                Console.WriteLine($"IceGatheringState {newState}");
+                GatherComplete = true;
             }
-            currentState = newState;
         }
 
-
-        private async Task InitializeDataChannel()
+        private async void OnIceCandidateReadyToSend(IceCandidate candidate)
         {
+            Console.WriteLine($"IceCandidate ready to send: {candidate.Content} | {candidate.SdpMid} | {candidate.SdpMlineIndex}");
 
-            videoChannel = await peerConnection.AddDataChannelAsync("vido", true, true);
-            videoChannel.MessageReceived += OnMessageReceived;
-            videoChannel.StateChanged += () => _ = WriteLogToFile($"VidoChannel State Changed: {videoChannel.State}");
-
-            forceChannel = await peerConnection.AddDataChannelAsync($"frce", true, true);
-            forceChannel.MessageReceived += OnMessageReceived;
-            forceChannel.StateChanged += () => _ = WriteLogToFile($"FrceChannel State Changed: {forceChannel.State}");
-
-            //depthChannel = await peerConnection.AddDataChannelAsync($"dpth", true, true);
-            //depthChannel.MessageReceived += OnMessageReceived;
-            //depthChannel.StateChanged += () => _ = WriteLogToFile($"dpthChannel State Changed: {depthChannel.State}");
-        }
-
-        private static void OnConnected()
-        {
-            _ = WriteLogToFile("Peer connection successfully established!");
-        }
-
-        private async static void OnIceCandidateReadyToSend(IceCandidate candidate)
-        {
-            _ = WriteLogToFile($"IceCandidate ready to send: {candidate.Content}");
             if (candidate.Content.Contains("typ relay"))
             {
-                _ = WriteLogToFile("Using TURN server for this candidate.");
+                Console.WriteLine("Using TURN server for this candidate.");
             }
             else
             {
-                _ = WriteLogToFile("Direct or STUN candidate.");
+                Console.WriteLine("Direct or STUN candidate.");
             }
+            // peerConnection.AddIceCandidate(candidate);
 
             if (currentState == IceConnectionState.Connected)
             {
-                pendingCandidates.Add(candidate);
                 await webSocket.sendCandidateToSocket(candidate);
             }
             else
                 await webSocket.sendCandidateToSocket(candidate);
         }
 
+
+
         private async void OnLocalSdpReadyToSend(SdpMessage message)
         {
+            //while (!GatherComplete)
+            // {
+            //     await Task.Delay(1000);
+            // }
             localdescription = message.Content;
             if (peerConnection == null || !peerConnection.Initialized)
             {
@@ -208,10 +187,12 @@ namespace WebRTCtest
                 return;
             }
 
-            _ = WriteLogToFile($"Local SDP ready to send: Type {message.Type} SDP: {message.Content}");
+            Console.WriteLine($"Local SDP ready to send: Type {message.Type} SDP: {message.Content}");
+
+
             try
             {
-
+                peerConnection.CreateAnswer();
                 await webSocket.SendMessageAsync((int)message.Type, message.Content, "mn_fol");
             }
             catch (Exception ex)
@@ -220,18 +201,94 @@ namespace WebRTCtest
             }
         }
 
-        private async void onIceGatheringChange(IceGatheringState iceGatheringState)
+        public void HandleRestart()
         {
-            _ = WriteLogToFile($"ICE Gathering State Changed: {iceGatheringState}");
+            restartCnt++;
+            if (restartCnt == 3)
+            {
+                restartCnt = 0;
+                //peerConnection.CreateOffer();
+            }
+            //peerConnection.CreateOffer();
+        }
 
-            if (iceGatheringState != IceGatheringState.Complete)
-                await webSocket.SendMessageAsync(3, localdescription, "mn_fol");
+        private async void OnIceCandidateReadyToSend(string candidate, int sdpMlineindex, string sdpMid)
+        {
+            //peerConnection.AddIceCandidate(sdpMid, sdpMlineindex, sdpMid);
+            Console.WriteLine($"IceCandidate ready to send: {candidate}");
+            if (candidate.Contains("typ relay"))
+            {
+                Console.WriteLine("Using TURN server for this candidate.");
+            }
+            else
+            {
+                Console.WriteLine("Direct or STUN candidate.");
+            }
+
+            await webSocket.sendCandidateToSocket(candidate, sdpMlineindex, sdpMid);
+        }
+
+        private async void OnLocalSdpReadyToSend(string type, string sdp)
+        {
+            localdescription = sdp;
+            if (peerConnection == null || !peerConnection.Initialized)
+            {
+                Console.WriteLine("PeerConnection is not initialized yet.");
+                return;
+            }
+
+            Console.WriteLine($"Local SDP ready to send: Type {type} SDP: {sdp}");
+            try
+            {
+                Console.WriteLine("sending offer to peer");
+                await webSocket.SendMessageAsync(1, sdp, "mn_fol");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Failed to set local description or send message: " + ex.Message);
+            }
+        }
+
+        private void OnIceStateChanged(IceConnectionState newState)
+        {
+            Console.WriteLine($"IceState Changed: {newState}");
+            currentState = newState;
+        }
+
+        private async Task InitializeDataChannel()
+        {
+
+            videoChannel = await peerConnection.AddDataChannelAsync("vido", true, true);
+            videoChannel.MessageReceived += OnMessageReceived;
+            videoChannel.StateChanged += () => Console.WriteLine($"VidoChannel State Changed: {videoChannel.State}");
+
+            forceChannel = await peerConnection.AddDataChannelAsync($"frce", true, true);
+            forceChannel.MessageReceived += OnMessageReceived;
+            forceChannel.StateChanged += () => Console.WriteLine($"FrceChannel State Changed: {forceChannel.State}");
+
+            depthChannel = await peerConnection.AddDataChannelAsync($"dpth", true, true);
+            depthChannel.MessageReceived += OnMessageReceived;
+            depthChannel.StateChanged += () => Console.WriteLine($"dpthChannel State Changed: {depthChannel.State}");
+        }
+
+        private static void OnConnected()
+        {
+            Console.WriteLine("Peer connection successfully established!");
+        }
+
+
+        private async void onIceGatheringChange()
+        {
+
+            Console.WriteLine("ICE Gathering State Changed: Complete");
+
+            await webSocket.SendMessageAsync(3, localdescription, "mn_fol");
         }
 
         private void OnMessageReceived(byte[] message)
         {
             string messageText = Encoding.UTF8.GetString(message);
-            _ = WriteLogToFile($"Received message on channel: {messageText}");
+            Console.WriteLine($"Received message on channel: {messageText}");
         }
 
         private async Task StartFrceTest()
@@ -241,7 +298,7 @@ namespace WebRTCtest
                 while (peerConnection == null || !peerConnection.Initialized)
                 {
                     await Task.Delay(500);
-                    _ = WriteLogToFile("Waiting for PeerConnection to initialize...");
+                    Console.WriteLine("Waiting for PeerConnection to initialize...");
                 }
 
                 while (true)
@@ -264,23 +321,23 @@ namespace WebRTCtest
 
                             forceChannel.SendMessage(buffer);
                             depthChannel.SendMessage(buffer2);
-                            _ = WriteLogToFile("Frce data sent");
+                            Console.WriteLine("Frce data sent");
                         }
                         catch (Exception ex)
                         {
-                            _ = WriteLogToFile($"Error sending message: {ex.Message}");
+                            Console.WriteLine($"Error sending message: {ex.Message}");
                         }
                     }
                     else
                     {
-                        _ = WriteLogToFile("DataChannel is not ready or open.");
+                        Console.WriteLine("DataChannel is not ready or open.");
                     }
                     await Task.Delay(1000); // Adjust timing as needed
                 }
             }
             catch (Exception ex)
             {
-                _ = WriteLogToFile($"An error occurred in StartFrceTest: {ex.Message}");
+                Console.WriteLine($"An error occurred in StartFrceTest: {ex.Message}");
             }
         }
 
@@ -290,7 +347,7 @@ namespace WebRTCtest
         public async void HandleOfferMessage(string sdpContent)
         {
             localdescription = sdpContent;
-            _ = WriteLogToFile("HandleOfferMessage ");
+            Console.WriteLine("HandleOfferMessage ");
             // Set the received SDP as the remote description
             var offer = new SdpMessage { Type = SdpMessageType.Offer, Content = sdpContent };
             await peerConnection.SetRemoteDescriptionAsync(offer);
@@ -301,10 +358,7 @@ namespace WebRTCtest
             //await peerConnection.SetRemoteDescriptionAsync(sdpmessage);
 
 
-            _ = WriteLogToFile("create answer result: " + res);
-            // Signal the SDP answer back to the remote peer via your signaling channel
-            //SendSdpToSocket(answer.Content, SdpMessageType.Answer);
-            await webSocket.SendMessageAsync((int)SdpMessageType.Answer, sdpContent, "mn_fol");
+            Console.WriteLine("create answer result: " + res);
         }
 
         /// <summary>
@@ -312,13 +366,6 @@ namespace WebRTCtest
         /// </summary>
         public async void HandleAnswerMessage(string sdpContent)
         {
-            _ = WriteLogToFile("HandleAnswerMessage ...");
-            /*if(currentState == IceConnectionState.Checking)
-            {
-                _ = WriteLogToFile("skip handling answer, due to state");
-                return;
-            }
-            */
             localdescription = sdpContent;
             /*
             if(sdpanswer == sdpContent)
@@ -327,23 +374,30 @@ namespace WebRTCtest
             }
             sdpanswer = sdpContent;*/
 
-            if (peerConnection == null || !peerConnection.Initialized)
+            if (peerConnection == null || !peerConnection.Initialized || localdescription == null)
             {
-                _ = WriteLogToFile("PeerConnection is not initialized.");
+                Console.WriteLine("PeerConnection is not initialized.");
+                return;
+            }
+
+            if (!sdpContent.Contains("candidate"))
+            {
                 return;
             }
 
             try
             {
-                var answer = new SdpMessage { Type = SdpMessageType.Answer, Content = sdpContent };
-                _ = WriteLogToFile("SetRemoteDescriptionAsync ...");
+                string modifiedsdpContent = sdpContent.Replace("\r\n", "\n");
+                Console.WriteLine("======================");
+                Console.WriteLine(modifiedsdpContent);
+                SdpMessage answer = new SdpMessage { Type = SdpMessageType.Answer, Content = sdpContent };
                 await peerConnection.SetRemoteDescriptionAsync(answer);
                 //Console.WriteLine("create answer result: " + res);
-                _ = WriteLogToFile("PeerConnection successfully SetRemoteDescription");
+                Console.WriteLine("PeerConnection successfully SetRemoteDescription");
             }
             catch (Exception ex)
             {
-                _ = WriteLogToFile($"Failed to set remote description: {ex.Message}");
+                Console.WriteLine($"Failed to set remote description: {ex.Message}");
             }
         }
 
@@ -352,19 +406,17 @@ namespace WebRTCtest
         /// </summary>
         public void HandleIceCandidateMessage(string sdp, int sdpMLineIndex, string sdpMid)
         {
+
             var candidate = new IceCandidate
             {
                 SdpMid = sdpMid,
                 SdpMlineIndex = sdpMLineIndex,
                 Content = sdp
             };
-            /*
-            if (currentState == IceConnectionState.Connected)
-                pendingCandidates.Add(candidate);
-            else
-            */
+
             peerConnection.AddIceCandidate(candidate);
         }
+
 
         private static async Task WriteLogToFile(string logMessage)
         {
@@ -373,11 +425,10 @@ namespace WebRTCtest
             await FileIO.AppendTextAsync(logFile, logMessage + "\n");
         }
 
-#pragma warning disable CS1591
         public void SendDepth(byte[] depthstream)
         {
-            // if(depthChannel.State == DataChannel.ChannelState.Open)
-            //     depthChannel.SendMessage(depthstream);
+            if (depthChannel.State == DataChannel.ChannelState.Open)
+                depthChannel.SendMessage(depthstream);
         }
     }
 }

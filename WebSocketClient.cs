@@ -100,6 +100,15 @@ public class WebSocketClient
         await SendMessageAsync(3, content, "mn_fol");
     }
 
+
+    public async Task sendCandidateToSocket(string candidate, int sdpMlineindex, string sdpMid)
+    {
+        String content = candidate
+        + "|" + sdpMlineindex
+        + "|" + sdpMid;
+        await SendMessageAsync(3, content, "mn_fol");
+    }
+
     private async void StartReceiving()
     {
         var buffer = new byte[1024 * 4];
