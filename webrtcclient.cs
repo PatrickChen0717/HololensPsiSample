@@ -260,7 +260,7 @@ namespace WebRTCtest
         private async Task InitializeDataChannel()
         {
 
-            videoChannel = await peerConnection.AddDataChannelAsync("vido", true, true);
+            videoChannel = await peerConnection.AddDataChannelAsync("vido", false, false);
             videoChannel.MessageReceived += OnMessageReceived;
             videoChannel.StateChanged += () => Console.WriteLine($"VidoChannel State Changed: {videoChannel.State}");
 
@@ -441,9 +441,22 @@ namespace WebRTCtest
             }
         }
 
+        public void SendVidoRGB(byte[] vidostream)
+        {
+            if (videoChannel.State == DataChannel.ChannelState.Open)
+            {
+                _ = WriteLogToFile("SendVidoRGB");
+                SliceData(vidostream);
+            }
+            else{
+                _ = WriteLogToFile("videoChannel closed");
+            }
+        }
+
         public void SliceData(byte[] videobyte)
         {
             byte[] metadata_bytes = new byte[16];
+            //metadata_bytes[15] = 3;
             int numChunk = 10;
 
             int totalLength = videobyte.Length;

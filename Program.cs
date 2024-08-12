@@ -93,8 +93,7 @@ namespace HoloLensSample
             var demos = new (string Name, Func<bool, Pipeline> Run)[]
             {
                 ("Movable Marker Demo", MovableMarkerDemo),
-                ("Bees Demo!", BeesDemo),
-                ("Scene Understanding Demo", SceneUnderstandingDemo),
+                ("Start Stream", BeesDemo),
             };
 
             bool persistStreamsToStore = true;
@@ -146,7 +145,7 @@ namespace HoloLensSample
                     {
                         if (pipeline == null)
                         {
-                            UI.Label("Choose a demo to run: Test5");
+                            UI.Label("Test5");
                             foreach (var (name, run) in demos)
                             {
                                 if (UI.Button(name))
@@ -202,56 +201,13 @@ namespace HoloLensSample
             SK.Shutdown();
         }
 
-        /// <summary>
-        /// Scene understanding demo.
-        /// </summary>
-        /// <param name="persistStreamsToStore">A value indicating whether to persist a store with several sensor streams.</param>
-        /// <returns>Pipeline.</returns>
-        public static Pipeline SceneUnderstandingDemo(bool persistStreamsToStore)
-        {
-            var pipeline = Pipeline.Create(nameof(SceneUnderstandingDemo));
 
-            var sceneUnderstanding = new SceneUnderstanding(pipeline, new SceneUnderstandingConfiguration()
-            {
-                ComputePlacementRectangles = true,
-                InitialPlacementRectangleSize = (0.5, 1.0),
-            });
-
-            var worldMeshes = sceneUnderstanding.Select(s => s.World.Meshes.ToArray());
-            var wallPlacementRectangles = sceneUnderstanding
-                .Select(s => s.Wall.PlacementRectangles)
-                .Select(rects => rects.Where(r => r.HasValue).Select(r => r.Value).ToArray());
-
-            worldMeshes.Parallel(
-                s => s.PipeTo(new Mesh3DRenderer(s.Out.Pipeline, Color.White, true)),
-                name: "RenderWorldMeshes");
-
-            wallPlacementRectangles.Parallel(
-                s => s.PipeTo(new Rectangle3DRenderer(s.Out.Pipeline, Color.Red)),
-                name: "RenderPlacementRectangles");
-
-            if (persistStreamsToStore)
-            {
-                // Optionally persist sensor streams to visualize in PsiStudio, along with scene understanding info.
-                /*var store = CreateStoreWithSourceStreams(pipeline, nameof(SceneUnderstandingDemo));*/
-
-                CreateStoreWithSourceStreams(pipeline, nameof(SceneUnderstandingDemo));
-
-                // sceneUnderstanding.Write("SceneUnderstanding", store, true);
-            }
-
-            return pipeline;
-        }
-
-        /// <summary>
-        /// Movable marker demo.
-        /// </summary>
-        /// <param name="persistStreamsToStore">A value indicating whether to persist a store with several sensor streams.</param>
-        /// <returns>Pipeline.</returns>
+#pragma warning disable CS1591
         public static Pipeline MovableMarkerDemo(bool persistStreamsToStore)
         {
             var pipeline = Pipeline.Create(nameof(MovableMarkerDemo));
 
+            /*
             try
             {
                 remoteExporter = new RemoteExporter(pipeline, 12345, TransportKind.Udp, 999999999999999999, 5);
@@ -259,7 +215,7 @@ namespace HoloLensSample
             catch (Exception ex)
             {
                 Console.WriteLine("Failed to establish remoteExporter: " + ex.Message);
-            }
+            }*/
 
             //_ = WriteLogToFile("RemoteExporter opened");
 
@@ -317,36 +273,7 @@ namespace HoloLensSample
             // camera.VideoEncodedImage.PipeTo(decoder.In);
 
             // await SaveImageAsync(image, filename);
-            /*
-            decoder.Out.Do(image =>
-            {
-                try
-                {
-                    _ = WriteLogToFile("Write decode image: " + image.Resource.Size);
-                    StorageFolder localFolder = ApplicationData.Current.LocalFolder;
 
-                    Random rnd = new Random();
-                    string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss") + "_" + rnd.Next(1, 1000).ToString();
-                    string filename = $"captured_{timestamp}.jpg";
-                }
-                catch (Exception ex)
-                {
-                    // Log or handle the exception appropriately
-                    Debug.WriteLine($"Error processing image: {ex.Message}");
-                }
-            });
-            */
-
-            /*
-            decoder.Out.Do(frame =>
-            {
-                var image = frame.Resource;
-                var position = TrackObjectInImage(image);
-                if (position.X != -1 && position.Y != -1)
-                {
-                    _ = WriteLogToFile($"Object Position: {position}");
-                }
-            }); */
 
             // Depth camera (long throw)
             DepthCameraConfiguration depthCameraConfiguration = new DepthCameraConfiguration();
@@ -365,22 +292,37 @@ namespace HoloLensSample
         public static Pipeline BeesDemo(bool persistStreamsToStore)
         {
             var pipeline = Pipeline.Create(nameof(BeesDemo));
+
+
+            // Instantiate the marker renderer (starting pose of 1 meter forward, 30cm down).
+            var markerScale = 1.0f;
+            var initialMarkerPose = CoordinateSystem.Translation(new Vector3D(1, 0, -0.3));
+            var markerMesh = MeshRenderer.CreateMeshFromEmbeddedResource("HoloLensSample.Assets.Marker.lumifyCvx.glb");
+            var markerRenderer = new MeshRenderer(pipeline, markerMesh, initialMarkerPose, new Vector3D(markerScale, markerScale, markerScale), Color.LightBlue);
+            // handle to move marker
+            
+            var handleBounds = new Vector3D(
+                markerScale * markerMesh.Bounds.dimensions.x,
+                markerScale * markerMesh.Bounds.dimensions.y,
+                markerScale * markerMesh.Bounds.dimensions.z);
+            var handle = new Handle(pipeline, initialMarkerPose, handleBounds);
+            
+
+            // slowly spin the marker
+            var spin = Generators
+                .Range(pipeline, 0, int.MaxValue, TimeSpan.FromMilliseconds(10))
+                .Select(i => CoordinateSystem.Yaw(Angle.FromDegrees(i * 0.5)));
+
+            // combine spinning with user-driven movement
+            
+            var markerPose = spin.Join(handle, RelativeTimeInterval.Infinite)
+                .Select(m => m.Item1.TransformBy(m.Item2));
+
+            markerPose.PipeTo(markerRenderer.Pose);
+
+
             webrtcclient client = new webrtcclient();
 
-            //_ = WriteLogToFile("Init: ");
-            /*
-            var depthCamera = new DepthCamera(pipeline, new DepthCameraConfiguration
-            {
-                DepthSensorType = ResearchModeSensorType.DepthLongThrow,
-                OutputCameraIntrinsics = false,
-                OutputPose = false,
-                OutputDepthImage = false,
-                OutputInfraredImage = false,
-                OutputDepthImageCameraView = true,
-                OutputInfraredImageCameraView = false,
-                OutputCalibrationPointsMap = false,
-            });
-            */
             Microsoft.Psi.Imaging.ImageFromNV12StreamDecoder streamDecoder = new ImageFromNV12StreamDecoder();
             Microsoft.Psi.Imaging.ImageDecoder decoder = new ImageDecoder(pipeline, streamDecoder);
 
@@ -390,26 +332,6 @@ namespace HoloLensSample
             depthCameraConfiguration.OutputDepthImage = true;
           
             var depthCamera = new DepthCamera(pipeline, depthCameraConfiguration);
-
-            //Microsoft.Psi.Imaging.ImageEncoder imagencoder = new ImageEncoder(pipeline, depthstreamDecoder);
-
-            //depthCamera.DepthImage.PipeTo();
-            //depthImageEncoder.Out.PipeTo(depthImageDecoder);
-
-            /*depthImageEncoder.Out.Do(DepthImage =>
-            {
-                _ = WriteLogToFile("1: depthImageDecodere == " + DepthImage.Resource.Height);
-            });*/
-            /*
-                        depthImageDecoder.Out.Do(depthimage =>
-                        {
-                            byte[] pixelData = new byte[depthimage.Resource.Size];
-                            _ = WriteLogToFile("1: depthimage.Resource.Size == " + depthimage.Resource.Size);
-                            System.Runtime.InteropServices.Marshal.Copy(depthimage.Resource.ImageData, pixelData, 0, pixelData.Length);
-                            client.SendDepth(pixelData);
-                        });
-                        */
-            //_ = WriteLogToFile("depthCamera created");
 
             var camera = new PhotoVideoCamera(
                 pipeline,
@@ -426,7 +348,8 @@ namespace HoloLensSample
                 {
                     byte[] pixelData = new byte[image.Resource.Size];
                     System.Runtime.InteropServices.Marshal.Copy(image.Resource.ImageData, pixelData, 0, pixelData.Length);
-                   
+
+                    
                     using (var stream = new InMemoryRandomAccessStream())
                     {
                         BitmapEncoder encoder = await BitmapEncoder.CreateAsync(BitmapEncoder.JpegEncoderId, stream);
@@ -436,9 +359,15 @@ namespace HoloLensSample
                             BitmapAlphaMode.Premultiplied,
                             (uint)image.Resource.Width,
                             (uint)image.Resource.Height,
-                            96,  // DPI X
-                            96,  // DPI Y
+                            96,
+                            96,
                             pixelData);
+
+                        var propertySet = new BitmapPropertySet();
+                        var qualityValue = new BitmapTypedValue(
+                            0.5,
+                            Windows.Foundation.PropertyType.Single
+                        );
 
                         await encoder.FlushAsync();
 
@@ -451,10 +380,12 @@ namespace HoloLensSample
                             await reader.LoadAsync((uint)stream.Size);
                             reader.ReadBytes(jpegData);
                         }
-                        _ = WriteLogToFile("jpegData image: " + jpegData.Length);
                         client.SendVido(jpegData);
                     }
+                    
 
+                   // _ = WriteLogToFile("pixelData == " + pixelData.Length);
+                   // Task.Run(() => client.SendVidoRGB(pixelData));
                 }
                 catch (Exception ex)
                 {
@@ -516,186 +447,7 @@ namespace HoloLensSample
             });
 
             return pipeline;
-            /*
-            var pipeline = Pipeline.Create(nameof(BeesDemo));
-
-            try
-            {
-                remoteExporter = new RemoteExporter(pipeline, 12345, TransportKind.Udp);
-            }
-            catch (Exception ex)
-            {
-                _ = WriteLogToFile("Failed to establish remoteExporter: " + ex.Message);
-            }
-
-            _ = WriteLogToFile("RemoteExporter opened");
-
-            // Load bee audio from a wav file, triggered to play every two seconds.
-            using var beeWave = Assembly.GetCallingAssembly().GetManifestResourceStream("HoloLensSample.Assets.Sounds.Bees.wav");
-            var beeAudio = new WaveStreamSampleSource(pipeline, beeWave);
-            var repeat = Generators.Repeat(pipeline, true, TimeSpan.FromSeconds(2));
-            repeat.PipeTo(beeAudio);
-
-            // Send the audio to a spatial sound rendering component.
-            var beeSpatialSound = new SpatialSound(pipeline, default, 2);
-            beeAudio.PipeTo(beeSpatialSound);
-
-            // Calculate the pose of the bee that flies in a 1 meter radius circle around the user's head.
-            var oneMeterForward = CoordinateSystem.Translation(new Vector3D(1, 0, 0));
-            var zeroRotation = DenseMatrix.CreateIdentity(3);
-            var headPose = new HeadSensor(pipeline);
-            var beePose = headPose.Select((head, env) =>
-            {
-                // Fly 1 degree around the user's head every 20 ms.
-                var timeElapsed = (env.OriginatingTime - pipeline.StartTime).TotalMilliseconds;
-                var degrees = Angle.FromDegrees(timeElapsed / 20.0);
-
-                // Ignore the user's head rotation.
-                head = head.SetRotationSubMatrix(zeroRotation);
-                return oneMeterForward.RotateCoordSysAroundVector(UnitVector3D.ZAxis, degrees).TransformBy(head);
-            });
-
-            // Render the bee as a sphere.
-            var sphere = new MeshRenderer(pipeline, Mesh.GenerateSphere(0.1f), Color.Yellow);
-            beePose.PipeTo(sphere.Pose);
-
-            // Finally, pass the position (Point3D) of the bee to the spatial audio component.
-            var beePosition = beePose.Select(b => b.Origin);
-            beePosition.PipeTo(beeSpatialSound.PositionInput);
-
-            if (true)
-            {
-                // Optionally persist sensor streams to visualize in PsiStudio, along with the bee streams.
-                /*var store = CreateStoreWithSourceStreams(pipeline, nameof(BeesDemo), headPose);//
-
-                CreateStoreWithSourceStreams(pipeline, nameof(BeesDemo), headPose);
-
-                // beePosition.Write("Bee.Position", store);
-                // beeAudio.Write("Bee.Audio", store);
-            }
-
-            return pipeline;
-            */
-        }
-
-        private static async Task<byte[]> DecodeFromByteArrayAsync(byte[] imageData)
-        {
-            try
-            {
-                // Create an InMemoryRandomAccessStream from the byte array
-                using (var stream = new InMemoryRandomAccessStream())
-                {
-                    // Write the byte array data into the stream
-                    await stream.WriteAsync(imageData.AsBuffer());
-                    stream.Seek(0);  // Reset the stream position to the beginning
-
-                    // Decode the image from the stream
-                    var decoder = await BitmapDecoder.CreateAsync(stream);
-
-                    // Obtain the pixel data from the decoder
-                    var pixelProvider = await decoder.GetPixelDataAsync();
-                    return pixelProvider.DetachPixelData();
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine("DecodeFromByteArrayAsync error: " + ex.Message + " " + ex.StackTrace);
-                return null;
-            }
-            
-        }
-
-        private static void CreateStoreWithSourceStreams(Pipeline pipeline, string storeName, HeadSensor head = null)
-        {
-            // Create a Psi store in \LocalAppData\HoloLensSample\LocalState
-            // To visualize in PsiStudio, the store can be copied to another machine via the device portal.
-            // var store = PsiStore.Create(pipeline, storeName, ApplicationData.Current.LocalFolder.Path);
-
-            // Head, hands, and eyes
-            // head ??= new HeadSensor(pipeline);
-            // var eyes = new EyesSensor(pipeline);
-            // var hands = new HandsSensor(pipeline);
-
-            // head.Write("Head", store);
-            // eyes.Write("Eyes", store);
-            // hands.Left.Write("Hands.Left", store);
-            // hands.Right.Write("Hands.Right", store);
-
-            // Microphone audio
-            // var audio = new Microphone(pipeline);
-            // audio.Write("Audio", store);
-
-            // PhotoVideo camera (video and mixed reality preview)
-            var camera = new PhotoVideoCamera(
-                pipeline,
-                new PhotoVideoCameraConfiguration
-                {
-                    VideoStreamSettings = new () { FrameRate = 15, ImageWidth = 896, ImageHeight = 504 },
-                });
-
-            // PreviewStreamSettings = new () { FrameRate = 15, ImageWidth = 896, ImageHeight = 504, MixedRealityCapture = new () },
-            // Microsoft.Psi.Imaging.ImageFromNV12StreamDecoder streamDecoder = new ImageFromNV12StreamDecoder();
-            // Microsoft.Psi.Imaging.ImageDecoder decoder = new ImageDecoder(pipeline, streamDecoder);
-            // camera.VideoEncodedImage.PipeTo(decoder.In);
-            camera.VideoEncodedImage.Write("PhotoCameraStream", remoteExporter.Exporter, true, DeliveryPolicy.LatestMessage);
-
-            // decoder.Out.Write("PhotoCameraStreamDecode", remoteExporter.Exporter, true, DeliveryPolicy.LatestMessage);
-            camera.VideoEncodedImage.Do(image =>
-            {
-                string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-                // _ = WriteLogToFile(timestamp + " | image Size : " + image.Resource.Size.ToString());
-            });
-
-            // Microsoft.Psi.Imaging.DepthImageDecoder depthImageDecoder = new DepthImageDecoder(pipeline, depthstreamDecoder);
-            // camera.VideoEncodedImage.PipeTo(decoder.In);
-
-            /*
-            decoder.Out.Do(async image =>
-            {
-                try
-                {
-                    // await SaveImageAsync(image, filename);
-                    StorageFolder localFolder = ApplicationData.Current.LocalFolder;
-
-                    Random rnd = new Random();
-                    string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss") + "_" + rnd.Next(1, 1000).ToString();
-                    string filename = $"captured_{timestamp}.jpg";
-                    await SaveImageAsync(image, filename);
-                }
-                catch (Exception ex)
-                {
-                    // Log or handle the exception appropriately
-                    Debug.WriteLine($"Error processing image: {ex.Message}");
-                }
-            });*/
-
-            // camera.VideoEncodedImageCameraView.Write("VideoEncodedImageCameraView", store, true);
-            // camera.PreviewEncodedImageCameraView.Write("PreviewEncodedImageCameraView", store, true);
-
-            // Depth camera (long throw)
-            DepthCameraConfiguration depthCameraConfiguration = new DepthCameraConfiguration();
-            depthCameraConfiguration.OutputInfraredImage = true;
-            var depthCamera = new DepthCamera(pipeline, depthCameraConfiguration);
-
-            // depthCamera.DepthImageCameraView.Write("DepthImageCameraView", store, true);
-
-            /*
-            depthCamera.DepthImage.Do(async depthImage =>
-            {
-                Random rnd = new Random();
-                string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss") + "_" + rnd.Next(1, 1000).ToString();
-                string filename = $"captured_depth_{timestamp}.jpg";
-                byte[] imagedata = new byte[depthImage.Resource.Size];
-                depthImage.Resource.CopyTo(imagedata);
-
-                // await SaveImageAsync(imagedata, filename);
-                await DecodeDepthImage(depthImage, filename);
-            });
-            */
-
-            depthCamera.DepthImage.Write("DepthCameraStream", remoteExporter.Exporter, true, DeliveryPolicy.LatestMessage);
-
-            // return store;
+        
         }
 
         private static CoordinateSystem LookAtPoint(Point3D sourcePoint, Point3D targetPoint)
@@ -705,194 +457,5 @@ namespace HoloLensSample
             var up = forward.CrossProduct(left);
             return new CoordinateSystem(sourcePoint, forward, left, up);
         }
-
-        private static async Task SaveImageAsync(byte[] imageBytes, string fileName)
-        {
-            // Get the local folder
-            var localFolder = ApplicationData.Current.LocalFolder;
-
-            // Create a new file or replace an existing one
-            var file = await localFolder.CreateFileAsync(fileName, CreationCollisionOption.ReplaceExisting);
-
-            // Write the image bytes to the file
-            using (var stream = await file.OpenAsync(FileAccessMode.ReadWrite))
-            {
-                using (var writer = new DataWriter(stream))
-                {
-                    writer.WriteBytes(imageBytes);
-                    await writer.StoreAsync();
-                }
-            }
-        }
-
-        private static void WriteEncodedImageCameraView(EncodedImageCameraView encodedImageCameraView, BinaryWriter writer)
-        {
-            WriteEncodedImage(encodedImageCameraView.ViewedObject, writer);
-        }
-
-        private static void WriteEncodedImage(Shared<EncodedImage> sharedEncodedImage, BinaryWriter writer)
-        {
-            InteropSerialization.WriteBool(sharedEncodedImage != null, writer);
-            if (sharedEncodedImage == null)
-            {
-                return;
-            }
-
-            var image = sharedEncodedImage.Resource;
-            var data = image.GetBuffer();
-            writer.Write(image.Width);
-            writer.Write(image.Height);
-            writer.Write((int)image.PixelFormat);
-            writer.Write(image.Size);
-            writer.Write(data, 0, image.Size);
-        }
-
-        private static async Task DecodeDepthImage(Shared<DepthImage> encodedDepth, string fileName)
-        {
-            // Assuming EncodedDepthImage is a wrapper around a depth image encoded as 16-bit integers
-            var width = encodedDepth.Resource.Width;
-            var height = encodedDepth.Resource.Height;
-            var depthImage = new Microsoft.Psi.Imaging.Image(width, height, encodedDepth.Resource.PixelFormat);
-            var buffer = depthImage.ImageData;
-
-            byte[] pixelData = new byte[encodedDepth.Resource.Size]; // 4 bytes per pixel for BGRA
-            System.Runtime.InteropServices.Marshal.Copy(encodedDepth.Resource.ImageData, pixelData, 0, pixelData.Length);
-
-            // Get the local folder
-            var localFolder = ApplicationData.Current.LocalFolder;
-
-            // Create a new file or replace an existing one
-            var file = await localFolder.CreateFileAsync(fileName, CreationCollisionOption.ReplaceExisting);
-
-            // Write the image bytes to the file
-            using (var stream = await file.OpenAsync(FileAccessMode.ReadWrite))
-            {
-                using (var writer = new DataWriter(stream))
-                {
-                    writer.WriteBytes(pixelData);
-                    await writer.StoreAsync();
-                }
-            }
-        }
-
-        private static async Task SaveImageAsync(Shared<Microsoft.Psi.Imaging.Image> image, string filename)
-        {
-            try
-            {
-                if (image.Resource.Size <= 0)
-                {
-                    return;
-                }
-
-                StorageFolder localFolder = ApplicationData.Current.LocalFolder;
-                StorageFile file = await localFolder.CreateFileAsync(filename, CreationCollisionOption.ReplaceExisting);
-               // _ = WriteLogToFile("image empty file created ");
-                using (var stream = await file.OpenAsync(FileAccessMode.ReadWrite))
-                {
-                    BitmapEncoder encoder = await BitmapEncoder.CreateAsync(BitmapEncoder.JpegEncoderId, stream);
-
-                    byte[] pixelData = new byte[image.Resource.Size];
-                    System.Runtime.InteropServices.Marshal.Copy(image.Resource.ImageData, pixelData, 0, pixelData.Length);
-  
-
-                    encoder.SetPixelData(
-                        BitmapPixelFormat.Bgra8,
-                        BitmapAlphaMode.Premultiplied,
-                        (uint)image.Resource.Width,
-                        (uint)image.Resource.Height,
-                        96,  // DPI X
-                        96,  // DPI Y
-                        pixelData);
-
-                    // imageDataChannel.SendMessage(pixelData);
-                    await encoder.FlushAsync();
-                }
-            }
-            catch (Exception e)
-            {
-               Console.WriteLine("SaveImageAsync err : " + e.Message);
-            }
-        }
-
-        private static async Task SaveImageAsync(Shared<DepthImage> image, string filename)
-        {
-            try
-            {
-               // _ = WriteLogToFile("image.Resource.Size : " + image.Resource.Size.ToString());
-                if (image.Resource.Size <= 0)
-                {
-                    return;
-                }
-
-                StorageFolder localFolder = ApplicationData.Current.LocalFolder;
-                StorageFile file = await localFolder.CreateFileAsync(filename, CreationCollisionOption.ReplaceExisting);
-               // _ = WriteLogToFile("image empty file created ");
-                using (var stream = await file.OpenAsync(FileAccessMode.ReadWrite))
-                {
-                    // Create a BitmapEncoder
-                    BitmapEncoder encoder = await BitmapEncoder.CreateAsync(BitmapEncoder.JpegEncoderId, stream);
-             //       _ = WriteLogToFile("BitmapEncoder created ");
-
-                    // Assuming image format is Bgra8 and the image class provides direct access to ImageData
-                    byte[] pixelData = new byte[image.Resource.Size]; // 4 bytes per pixel for BGRA
-            //        _ = WriteLogToFile("pixelData created ");
-                    System.Runtime.InteropServices.Marshal.Copy(image.Resource.ImageData, pixelData, 0, pixelData.Length);
-             //       _ = WriteLogToFile("pixelData copied ");
-
-                    encoder.SetPixelData(
-                        BitmapPixelFormat.Bgra8,
-                        BitmapAlphaMode.Premultiplied,
-                        (uint)image.Resource.Width,
-                        (uint)image.Resource.Height,
-                        96,  // DPI X
-                        96,  // DPI Y
-                        pixelData);
-
-                    // imageDataChannel.SendMessage(pixelData);
-                    await encoder.FlushAsync();
-                }
-            }
-            catch (Exception e)
-            {
-                Console.WriteLine("SaveImageAsync err : " + e.Message);
-            }
-        }
-
-        private static async Task WriteLogToFile(string logMessage)
-        {
-            StorageFolder localFolder = ApplicationData.Current.LocalFolder;
-            StorageFile logFile = await localFolder.CreateFileAsync("applog.txt", CreationCollisionOption.OpenIfExists);
-            await FileIO.AppendTextAsync(logFile, logMessage + "\n");
-        }
-
-        private static void SendMessage(string user, string message)
-        {
-            try
-            {
-                //await hubConnection.InvokeAsync("SendMessage", user, message);
-            }
-            catch (System.Exception ex)
-            {
-                Console.WriteLine($"Exception on send: {ex.Message}");
-            }
-        }
-
-        private static void OnConnected()
-        {
-            Console.WriteLine("Peer connection successfully established!");
-        }
-
-        /*
-        private static void OnIceCandidateReadyToSend(IceCandidate candidate)
-        {
-            Console.WriteLine($"IceCandidate ready to send: {candidate.Content}");
-        }
-
-        private static void OnLocalSdpReadyToSend(SdpMessage message)
-        {
-            Console.WriteLine($"Local SDP ready to send: Type {message.Type} SDP: {message.Content}");
-        }*/
-
-
     }
 }
