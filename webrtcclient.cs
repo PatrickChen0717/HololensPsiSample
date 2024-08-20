@@ -445,19 +445,31 @@ namespace WebRTCtest
         {
             if (videoChannel.State == DataChannel.ChannelState.Open)
             {
-                _ = WriteLogToFile("SendVidoRGB");
+                // _ = WriteLogToFile("SendVidoRGB");
                 SliceData(vidostream);
             }
             else{
                 _ = WriteLogToFile("videoChannel closed");
             }
         }
-
+        /*
+        public async Task SendVidoRGBAsync(byte[] vidostream)
+        {
+            if (videoChannel.State == DataChannel.ChannelState.Open)
+            {
+                SliceData(vidostream); // Assuming SliceDataAsync is an async method you control
+            }
+            else
+            {
+                _ = WriteLogToFile("videoChannel closed");
+            }
+        }
+        */
         public void SliceData(byte[] videobyte)
         {
             byte[] metadata_bytes = new byte[16];
             //metadata_bytes[15] = 3;
-            int numChunk = 10;
+            int numChunk = 2;
 
             int totalLength = videobyte.Length;
             int chunkSize = totalLength / numChunk;

@@ -59,6 +59,8 @@ namespace HoloLensSample
     using System.Drawing.Imaging;
     using System.Drawing;
     using System.Runtime.InteropServices;
+    using static Microsoft.Psi.MixedReality.MediaCapture.PhotoVideoCameraConfiguration;
+    using Windows.Media.Capture;
 
     /// <summary>
     /// HoloLens samples.
@@ -207,16 +209,6 @@ namespace HoloLensSample
         {
             var pipeline = Pipeline.Create(nameof(MovableMarkerDemo));
 
-            /*
-            try
-            {
-                remoteExporter = new RemoteExporter(pipeline, 12345, TransportKind.Udp, 999999999999999999, 5);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine("Failed to establish remoteExporter: " + ex.Message);
-            }*/
-
             //_ = WriteLogToFile("RemoteExporter opened");
 
             // Instantiate the marker renderer (starting pose of 1 meter forward, 30cm down).
@@ -337,10 +329,14 @@ namespace HoloLensSample
                 pipeline,
                 new PhotoVideoCameraConfiguration
                 {
-                    VideoStreamSettings = new() { FrameRate = 15, ImageWidth = 896, ImageHeight = 504 },
-            });
+                    VideoStreamSettings = new() { FrameRate = 15, ImageWidth = 896, ImageHeight = 504,
+                        // OutputImage = true,
+                        OutputEncodedImage = true,
+                        MixedRealityCapture = new MixedRealityCaptureVideoEffect(MediaStreamType.Photo, 0.9f, MixedRealityCapturePerspective.PhotoVideoCamera)
+                    },
+            });;
 
-            camera.VideoEncodedImage.PipeTo(decoder.In);
+            camera.VideoEncodedImage.PipeTo(decoder.In, DeliveryPolicy.LatestMessage);
 
             decoder.Out.Do(async image =>
             {
@@ -363,11 +359,12 @@ namespace HoloLensSample
                             96,
                             pixelData);
 
-                        var propertySet = new BitmapPropertySet();
+                        //var propertySet = new BitmapPropertySet();
+                        /*
                         var qualityValue = new BitmapTypedValue(
                             0.5,
                             Windows.Foundation.PropertyType.Single
-                        );
+                        );*/
 
                         await encoder.FlushAsync();
 
@@ -385,7 +382,7 @@ namespace HoloLensSample
                     
 
                    // _ = WriteLogToFile("pixelData == " + pixelData.Length);
-                   // Task.Run(() => client.SendVidoRGB(pixelData));
+                   //  client.SendVidoRGB(pixelData);
                 }
                 catch (Exception ex)
                 {

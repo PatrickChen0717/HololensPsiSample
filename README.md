@@ -1,3 +1,5 @@
+# General Microsoft Sample Readme
+
 Platform for Situated Intelligence supports the development of mixed reality applications, from processing the rich multimodal sensor streams to rendering output on the device. For more information on the relevant concepts and components, see the [mixed reality overview](https://github.com/microsoft/psi/wiki/Mixed-Reality-Overview).
 
 This sample project includes some simple demonstrations of how to develop HoloLens 2 applications powered by \\psi.
@@ -127,3 +129,30 @@ Note: The visualizer for hand tracking data is defined in `Microsoft.Psi.MixedRe
 Here's an example visualization of streams persisted by the "Bees Demo":
 
 ![Bees Demo Visualization](Images/BeesDemoPsiStudio.png)
+
+
+
+## How to add new Meshes into the project
+
+Step 1: Add mesh file into the project
+
+![Debug Properties for Deploying](Images/Screenshot2024-08-20-100027.png)
+
+Step 2: Right click on the added mesh file, and change the `Properties->Build Action` to `Embedded Resource`
+
+![Debug Properties for Deploying](Images/Screenshot2024-08-20-100105.png)
+
+
+Step 3: Create the mesh object in code (change the directory to the new mesh file path)
+```csharp
+var markerMesh = MeshRenderer.CreateMeshFromEmbeddedResource("HoloLensSample.Assets.Marker.lumifyCvx.glb");
+```
+
+## How to add new DataChannel into WebRTC
+```csharp
+private DataChannel dataChannel;
+
+dataChannel = await peerConnection.AddDataChannelAsync($"data", true, true);
+dataChannel.MessageReceived += OnMessageReceived;
+dataChannel.StateChanged += () => Console.WriteLine($"dataChannel State Changed: {dataChannel.State}");
+```
