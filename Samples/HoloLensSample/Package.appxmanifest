@@ -1,0 +1,92 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:mp="http://schemas.microsoft.com/appx/2014/phone/manifest"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap2="http://schemas.microsoft.com/appx/manifest/uap/windows10/2"
+  xmlns:iot="http://schemas.microsoft.com/appx/manifest/iot/windows10"
+  xmlns:uap3="http://schemas.microsoft.com/appx/manifest/uap/windows10/3"
+xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  xmlns:uap4="http://schemas.microsoft.com/appx/manifest/uap/windows10/4"
+  xmlns:uap6="http://schemas.microsoft.com/appx/manifest/uap/windows10/6"
+  IgnorableNamespaces="uap mp uap2 iot uap3 rescap uap4 uap6">
+
+  <Identity
+    Name="d4a18196-76b8-42ed-a2f8-b614dbace9bb"
+    Publisher="CN=Microsoft"
+    Version="1.0.0.0" />
+
+  <mp:PhoneIdentity PhoneProductId="d4a18196-76b8-42ed-a2f8-b614dbace9bb" PhonePublisherId="00000000-0000-0000-0000-000000000000"/>
+
+  <Properties>
+    <DisplayName>HoloLensSample</DisplayName>
+    <PublisherDisplayName>Platform for Situated Intelligence</PublisherDisplayName>
+    <Logo>Assets\Logo\StoreLogo.png</Logo>
+  </Properties>
+
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Universal" MinVersion="10.0.0.0" MaxVersionTested="10.0.0.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="x-generate"/>
+  </Resources>
+
+  <Applications>
+    <Application Id="App"
+      Executable="$targetnametoken$.exe"
+      EntryPoint="HoloLensSample.App">
+      <uap:VisualElements
+        DisplayName="HoloLensSample"
+        Square150x150Logo="Assets\Logo\Square150x150Logo.png"
+        Square44x44Logo="Assets\Logo\Square44x44Logo.png"
+        Description="HoloLensSample"
+        BackgroundColor="transparent">
+        <uap:DefaultTile Wide310x150Logo="Assets\Logo\Wide310x150Logo.png"/>
+        <uap:SplashScreen Image="Assets\Logo\SplashScreen.png" />
+      </uap:VisualElements>
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <uap2:Capability Name="spatialPerception"/>
+    <Capability Name="internetClientServer"/>
+    <Capability Name="internetClient"/>
+    <uap3:Capability Name="backgroundMediaPlayback"/>
+    <Capability Name="privateNetworkClientServer"/>
+    <Capability Name="allJoyn"/>
+    <uap3:Capability Name="remoteSystem"/>
+    <uap:Capability Name="musicLibrary"/>
+    <uap:Capability Name="objects3D"/>
+    <uap4:Capability Name="offlineMapsManagement"/>
+    <uap:Capability Name="phoneCall"/>
+    <uap2:Capability Name="phoneCallHistoryPublic"/>
+    <uap:Capability Name="picturesLibrary"/>
+    <uap:Capability Name="removableStorage"/>
+    <uap:Capability Name="sharedUserCertificates"/>
+    <iot:Capability Name="systemManagement"/>
+    <uap:Capability Name="userAccountInformation"/>
+    <uap4:Capability Name="userDataTasks"/>
+    <uap:Capability Name="videosLibrary"/>
+    <uap3:Capability Name="userNotificationListener"/>
+    <uap:Capability Name="voipCall"/>
+    <iot:Capability Name="lowLevelDevices"/>
+    <uap6:Capability Name="graphicsCapture"/>
+    <uap:Capability Name="enterpriseAuthentication"/>
+    <uap:Capability Name="contacts"/>
+    <Capability Name="codeGeneration"/>
+    <uap:Capability Name="chat"/>
+    <uap:Capability Name="blockedChatMessages"/>
+    <uap:Capability Name="appointments"/>
+    <DeviceCapability Name="gazeInput"/>
+    <DeviceCapability Name="microphone"/>
+    <DeviceCapability Name="webcam"/>
+    <DeviceCapability Name="backgroundSpatialPerception"/>
+    <DeviceCapability Name="proximity"/>
+    <DeviceCapability Name="pointOfService"/>
+    <DeviceCapability Name="location"/>
+    <DeviceCapability Name="lowLevel"/>
+    <DeviceCapability Name="bluetooth"/>
+  </Capabilities>
+</Package>
