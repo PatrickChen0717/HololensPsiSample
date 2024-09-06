@@ -1,49 +1,158 @@
-# Platform for Situated Intelligence Samples
+# General Microsoft Sample Readme
 
-This repository contains a few small example applications written with [Platform for Situated Intelligence](https://github.com/microsoft/psi). Some of the samples address specialized topics like how to leverage speech recognition components or how to bridge to ROS, but in general looking through them can give you more insight into programming with Platform for Situated Intelligence. Besides these samples, a good place to start reading about programming with \\psi is the [Brief Introduction](https://github.com/microsoft/psi/wiki/Brief-Introduction) and the set of [Tutorials](https://github.com/microsoft/psi/wiki/Tutorials).
+Platform for Situated Intelligence supports the development of mixed reality applications, from processing the rich multimodal sensor streams to rendering output on the device. For more information on the relevant concepts and components, see the [mixed reality overview](https://github.com/microsoft/psi/wiki/Mixed-Reality-Overview).
 
-As indicated in the last column in the table below, some of the samples have a corresponding detailed **walkthrough** that explains how the samples are constructed and function, and provide further pointers to documentation and learning materials. Going through these walkthroughs can also help you learn more about programming with \\psi.
+This sample project includes some simple demonstrations of how to develop HoloLens 2 applications powered by \\psi.
+
+## Prerequisites
+
+You will need a HoloLens 2. If you don't have a physical device, the [HoloLens 2 Emulator](https://docs.microsoft.com/en-us/windows/mixed-reality/develop/advanced-concepts/using-the-hololens-emulator) might work as well, but this has not been fully tested.
+
+### Enable Developer Mode and the Device Portal
+
+Follow [these steps](https://docs.microsoft.com/en-us/windows/mixed-reality/develop/platform-capabilities-and-apis/using-the-windows-device-portal) to enable Developer Mode and ensure you are able to use the Device Portal, as well as set yourself up for WIFi or USB access (USB is optional).
+
+You can then try to connect to the HoloLens 2 device over WiFi by using its IP address, and access the device portal. You will have to setup a username/password by requesting a PIN which will be displayed on the HoloLens 2.
+
+### Enable Research Mode
+
+[Research Mode](https://docs.microsoft.com/en-us/windows/mixed-reality/develop/advanced-concepts/research-mode) is required for accessing data from the IMU sensors, visible light cameras, and depth cameras (including IR). Follow [these steps](https://docs.microsoft.com/en-us/windows/mixed-reality/develop/platform-capabilities-and-apis/research-mode#enabling-research-mode-hololens-1st-gen-and-hololens-2) to enable research mode on the device.
+
+## Building and Deploying
+
+Building and deploying this sample as an application that can run on the HoloLens 2 device is most easily done using Visual Studio.
+
+### Building
+
+Follow [these steps to install required mixed reality build tools](https://docs.microsoft.com/en-us/windows/mixed-reality/develop/install-the-tools). In particular, make sure you have the following installed in Visual Studio:
+* Workload:
+  * _Universal Windows Platform (UWP) development_
+* Individual components:
+  * _MSVC v143 - VS 2022 C++ ARM64 build tools (Latest)_
+  * _C++ Universal Windows Platform support for v143 build tools (ARM64)_
+
+NOTE: Later on, Visual Studio may at some point prompt you to also install the _C++ (v143) Universal Windows Platform tools_. Go ahead and install them when prompted.
+
+### Deploying and Running
+
+Connect your HoloLens 2 and your development machine to the same network (they can also be connected via USB). In the HoloLens 2, determine and write down its IP address (the easiest way to do this is to simply speak "What is my IP address?" while wearing the device with the Start menu visible).
+
+In Visual Studio, right-click the `HoloLens Samples (Universal Windows)` project in the Solution Explorer, and select "Properties" at the bottom.
+
+Select _Remote Machine_ for the _Target device_, and enter the HoloLens device's IP address for _Remote machine_.
+
+![Debug Properties for Deploying](Images/DebugProperties.png)
+
+Now simply hit F5 to build and deploy to the HoloLens 2. After deploying it once, you can also find the sample in the list of Apps installed on the device.
+
+## Walkthrough
+
+This project contains three sample Psi applications which can all be found in `Program.cs`. In `Main()`, you will see some initialization code at the top, and then some logic for using [StereoKit](https://stereokit.net/) to create UI holograms for starting/stopping each demo pipeline separately.
+
+Let's walk through the "Bees Demo." In this demo, we'll utilize streaming information about the user's head pose, and render a "bee" (small sphere) buzzing around their head (using spatial audio).
+
+First we create our \\psi `Pipeline` as normal:
+
+```csharp
+var pipeline = Pipeline.Create(nameof(BeesDemo));
+```
+
+Attached to the project is a short audio clip of buzzing bees. We'll generate a continuous \\psi stream of `AudioBuffer` from this file using the `WaveStreamSampleSource` component, and pipe it to a `SpatialSound` component for rendering the audio from a particular location (determined later).
+
+```csharp
+// Load bee audio from a wav file, triggered to play every two seconds.
+using var beeWave = Assembly.GetCallingAssembly().GetManifestResourceStream("HoloLensSample.Assets.Sounds.Bees.wav");
+var beeAudio = new WaveStreamSampleSource(pipeline, beeWave);
+var repeat = Generators.Repeat(pipeline, true, TimeSpan.FromSeconds(2));
+repeat.PipeTo(beeAudio);
+
+// Send the audio to a spatial sound rendering component.
+var beeSpatialSound = new SpatialSound(pipeline, default, 2);
+beeAudio.PipeTo(beeSpatialSound);
+```
+
+We'll use the `HeadSensor` component to get the continuous input stream of the user's head pose. Then we use a `Select` operator to derive a new stream for the bee's pose. Inside the operator, we calculate the desired pose of the bee for every pose of the user's head, over time.
+
+```csharp
+// Calculate the pose of the bee that flies in a 1 meter radius circle around the user's head.
+var oneMeterForward = CoordinateSystem.Translation(new Vector3D(1, 0, 0));
+var zeroRotation = DenseMatrix.CreateIdentity(3);
+var headPose = new HeadSensor(pipeline);
+var beePose = headPose.Select((head, env) =>
+{
+    // Fly 1 degree around the user's head every 20 ms.
+    var timeElapsed = (env.OriginatingTime - pipeline.StartTime).TotalMilliseconds;
+    var degrees = Angle.FromDegrees(timeElapsed / 20.0);
+
+    // Ignore the user's head rotation.
+    head = head.SetRotationSubMatrix(zeroRotation);
+    return oneMeterForward.RotateCoordSysAroundVector(UnitVector3D.ZAxis, degrees).TransformBy(head);
+});
+```
+
+Finally, we'll use the `MeshStereoKitRenderer` component to render a yellow sphere for representing the bee, and pass the bee's pose to it. We'll also pass the bee's position (rotation not needed) to the `SpatialSound` component we created earlier.
+
+```csharp
+// Render the bee as a sphere.
+var sphere = new MeshStereoKitRenderer(pipeline, Mesh.GenerateSphere(0.1f), Color.Yellow);
+beePose.PipeTo(sphere.PoseInput);
+
+// Finally, pass the position (Point3D) of the bee to the spatial audio component.
+var beePosition = beePose.Select(b => b.Origin);
+beePosition.PipeTo(beeSpatialSound.PositionInput);
+```
+
+## Persisting Stores
+
+It is also possible to persist any of our \\psi application's streams to a store on the device. We could then use the [Device Portal](https://docs.microsoft.com/en-us/windows/mixed-reality/develop/platform-capabilities-and-apis/using-the-windows-device-portal) to copy that store to a Windows dev machine for visualizing in [Psi Studio](https://github.com/microsoft/psi/wiki/Psi-Studio).
+
+An example of how to accomplish this can be found in the `CreateStoreWithSourceStreams()` method in this sample project.
+
+One location that is easy to access for writing data is the application's "LocalState" folder. For example, you can find that folder for this sample application in the Device Portal at the path: __LocalAppData\HoloLensSample\LocalState__
+
+You can create a \\psi store at that location with the following line of code:
+
+```csharp
+var store = PsiStore.Create(pipeline, storeName, ApplicationData.Current.LocalFolder.Path);
+```
+
+Streams can then be persisted to that store as normal. For example:
+
+```csharp
+var hands = new HandsSensor(pipeline);
+hands.Left.Write("Hands.Left", store);
+hands.Right.Write("Hands.Right", store);
+```
+
+Note: The visualizer for hand tracking data is defined in `Microsoft.Psi.MixedReality.Visualization.Windows`. The visualizers for 3D depth and image camera views are defined in `Microsoft.Psi.Spatial.Euclidean.Visualization.Windows`. Follow the instructions for [3rd Party Visualizers](https://github.com/microsoft/psi/wiki/3rd-Party-Visualizers) to add those projects' assemblies to `PsiStudioSettings.xml` in order to visualize 3D hands and camera views in PsiStudio. 
+
+Here's an example visualization of streams persisted by the "Bees Demo":
+
+![Bees Demo Visualization](Images/BeesDemoPsiStudio.png)
 
 
-| Name | Description | Windows | Linux | Walkthrough |
-| :----------- | :---------- | :--: | :--: | :--: |
-| [HelloWorld](Samples/HelloWorld) <br> ![Hello World preview image showing code snippet](Samples/HelloWorld/Images/HelloWorldPreview.png) | This sample is the simplest possible starting point for creating a \\psi application. | Yes | Yes | [Yes](Samples/HelloWorld) | 
-| [SimpleVoiceActivityDetector](Samples/SimpleVoiceActivityDetector) <br> ![Preview image showing visualized audio and VAD result streams](Samples/SimpleVoiceActivityDetector/Images/SimpleVADPreview.png) | This sample captures audio from a microphone and performs _voice activity detection_, i.e., it computes a boolean signal indicating whether or not the audio contains voiced speech. | Yes | Yes | [Yes](Samples/SimpleVoiceActivityDetector) | 
-| [WebcamWithAudioSample](Samples/WebcamWithAudioSample) <br> ![Preview gif showing webcam view of a person speaking and audio level changing](Samples/WebcamWithAudioSample/Images/WebcamPreview.gif) | This sample illustrates how to display images from a camera and the audio energy level from a microphone. | Yes | - | [Yes](Samples/WebcamWithAudioSample) | 
-| [LinuxWebcamWithAudioSample](Samples/LinuxWebcamWithAudioSample) | This sample illustrates how to display images from a camera and the audio energy level from a microphone on Linux. | - | Yes | [Yes](Samples/LinuxWebcamWithAudioSample) | 
-| [AzureKinectSample](Samples/AzureKinectSample) <br> <img src="Samples/AzureKinectSample/SampleOutput.png" width="320" alt="Sample output from Azure Kinect sample showing ASCII art of a person waving"> | This sample demonstrates how to use the Azure Kinect sensor with body tracking and how to use the `Join()` and `Pair()` operators to synchronize and fuse streams. | Yes | - | [Yes](Samples/AzureKinectSample) |
-| [WhatIsThat](Samples/WhatIsThat) <br> ![Preview gif of visualized 3d output from What-is-That sample](Samples/WhatIsThat/Images/WhatIsThatPreview.gif) | This sample implements a simple application that uses an Azure Kinect sensor to detect the objects a person is pointing to. | Yes | - | [Yes](Samples/WhatIsThat) |
-| [PsiBot](https://github.com/microsoftgraph/microsoft-graph-comms-samples/tree/master/Samples/PublicSamples/PsiBot) <br> <img src="https://github.com/microsoftgraph/microsoft-graph-comms-samples/blob/master/Samples/PublicSamples/PsiBot/TeamsBotSample/ball.png" width="320" alt="Preview image of the Teams Bot integration sample - a ball bouncing between the active speakers"> | This sample application shows how you can integrate \\psi with the Teams bot architecture to develop bots that can participate in live meetings. | Yes | - | [Yes](https://github.com/microsoftgraph/microsoft-graph-comms-samples/tree/master/Samples/PublicSamples/PsiBot) |
-| [KinectSample](Samples/KinectSample) | This sample illustrates how to augment an existing voice activity detector by leveraging information about lips motion extracted from Kinect face tracking. | Yes | - | - |
-| [SpeechSample](Samples/SpeechSample) | This sample illustrates how to use various speech recognition components. | Yes | - | - |
-| [LinuxSpeechSample](Samples/LinuxSpeechSample) | This sample illustrates how to use various speech recognition components on Linux. | - | Yes | [Yes](Samples/LinuxSpeechSample) |
-| [RosTurtleSample](Samples/RosTurtleSample) <br> <img src="Samples/RosTurtleSample/Drawing.png" width="320" alt="Preview image of Ros Turtle sample"> | This sample illustrates how to connect Platform for Situated Intelligence to the `turtlesim` in ROS. | Yes | Yes | [Yes](Samples/RosTurtleSample) |
-| [RosArmControlSample](Samples/RosArmControlSample) | This sample illustrates how to connect Platform for Situated Intelligence to control the [uArm Metal](http://ufactory.cc/#/en/uarm1) using ROS. | Yes | Yes | [Yes](Samples/RosArmControlSample) |
-| [OpenCVSample](Samples/OpenCVSample) | This sample illustrates how to interop with OpenCV. | Yes | - | - |
-| [HoloLensSample](Samples/HoloLensSample) <br> ![Preview gif of visualized output streams from one of the HoloLens Sample demos](Samples/HoloLensSample/Images/MovableMarker.gif) | This sample demonstrates how to develop Mixed Reality \\psi applications for the HoloLens 2. | UWP | - | [Yes](Samples/HoloLensSample) |
 
-# Building
+## How to add new Meshes into the project
 
-To build the samples, you will need to install [Visual Studio 2022](https://visualstudio.microsoft.com/vs/) with the .NET desktop development workload on Windows, or [.NET](https://docs.microsoft.com/en-us/dotnet/core/install/linux) on Linux. Some samples may have additional prerequisites. Please see the README of each individual sample for more information.
+Step 1: Add mesh file into the project
 
-# Contributing
+![Debug Properties for Deploying](Images/Screenshot2024-08-20-100027.png)
 
-This project welcomes contributions and suggestions.  Most contributions require you to agree to a
-Contributor License Agreement (CLA) declaring that you have the right to, and actually do, grant us
-the rights to use your contribution. For details, visit https://cla.opensource.microsoft.com.
+Step 2: Right click on the added mesh file, and change the `Properties->Build Action` to `Embedded Resource`
 
-When you submit a pull request, a CLA bot will automatically determine whether you need to provide
-a CLA and decorate the PR appropriately (e.g., status check, comment). Simply follow the instructions
-provided by the bot. You will only need to do this once across all repos using our CLA.
+![Debug Properties for Deploying](Images/Screenshot2024-08-20-100105.png)
 
-This project has adopted the [Microsoft Open Source Code of Conduct](https://opensource.microsoft.com/codeofconduct/).
-For more information see the [Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/) or
-contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additional questions or comments.
 
-# License
+Step 3: Create the mesh object in code (change the directory to the new mesh file path)
+```csharp
+var markerMesh = MeshRenderer.CreateMeshFromEmbeddedResource("HoloLensSample.Assets.Marker.lumifyCvx.glb");
+```
 
-All Platform for Situated Intelligence samples are available under an [MIT License](LICENSE.txt).
+## How to add new DataChannel into WebRTC
+```csharp
+private DataChannel dataChannel;
 
-# Trademarks
-
-This project may contain trademarks or logos for projects, products, or services. Authorized use of Microsoft trademarks or logos is subject to and must follow [Microsoft's Trademark & Brand Guidelines](https://www.microsoft.com/en-us/legal/intellectualproperty/trademarks/usage/general). Use of Microsoft trademarks or logos in modified versions of this project must not cause confusion or imply Microsoft sponsorship. Any use of third-party trademarks or logos are subject to those third-party's policies.
+dataChannel = await peerConnection.AddDataChannelAsync($"data", true, true);
+dataChannel.MessageReceived += OnMessageReceived;
+dataChannel.StateChanged += () => Console.WriteLine($"dataChannel State Changed: {dataChannel.State}");
+```
